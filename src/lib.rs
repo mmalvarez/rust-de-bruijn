@@ -1,8 +1,12 @@
+// Based on https://github.com/sweirich/challenge/blob/canon/debruijn/debruijn1.md
+
 use std::{rc::Rc, borrow::Borrow};
 use either::Either;
 use LambdaErr::BadApp;
 
 pub type Binder = u64;
+
+
 
 #[derive(Clone, Debug)]
 pub enum Prim {
@@ -38,21 +42,37 @@ impl LambdaTerm {
     }
 }
 
-pub fn appr(body : LambdaTermR, arg : LambdaTermR) -> LambdaTermR {
-    Rc::new(App(body, arg))
-}
-pub fn absr(body : LambdaTermR) -> LambdaTermR {
-    Rc::new(Abs(body))
-}
-pub fn varr(x : Binder) -> LambdaTermR {
-    Rc::new(Var(x))
-}
-pub fn primr(p : Prim) -> LambdaTermR {
-    Rc::new(Primitive(p))
-}
-
-
 pub type LambdaTermR = Rc<LambdaTerm>;
+
+// defunctionalized substitutions
+#[derive(Clone)]
+pub enum Sub  {
+    Inc(Binder),
+    Extend(LambdaTermR, Rc<Sub>),
+    Compose(Rc<Sub>, Rc<Sub>),
+}
+
+pub type SubR = Rc<Sub>;
+
+impl Sub {
+    fn apply(&self, b : Binder) -> LambdaTermR {
+        match self {
+            Sub::Inc(k) => {
+                LambdaTerm::varr(k + b)
+            },
+            Sub::Extend(t, s) => {
+                if b == 0 {
+                    t.clone()
+                } else {
+                    s.apply(b - 1)   
+                }
+            },
+            Sub::Compose(s1, s2) => {
+                todo!()
+            },
+        }
+    }
+}
 
 use LambdaTerm::{App, Abs, Var, Primitive};
 
