@@ -1,24 +1,24 @@
-// Based on https://github.com/sweirich/challenge/blob/canon/debruijn/debruijn1.md
-
-pub mod lambda_term;
-pub mod de_bruijn;
-pub mod nameful;
-
-/*
-use std::{rc::Rc};
+use std::rc::Rc;
+use crate::lambda_term::LambdaTerm;
+use crate::lambda_term::LambdaTermR;
+use crate::lambda_term::LambdaErr;
+use crate::lambda_term::LambdaErr::{BadApp, Stuck, Unbound};
+use crate::lambda_term::{appr, absr, varr, primr};
+use crate::lambda_term::LambdaTerm::{App, Abs, Var, Primitive};
+use crate::lambda_term::Prim;
 
 pub type Binder = u64;
-
-use crate::lambda_term::LambdaTerm::{App, Abs, Var, Primitive};
-
-use LambdaErr::{BadApp, Unbound, Stuck};
+pub type Lbinder = ();
 
 #[derive(Clone)]
 pub enum Sub {
     Incr(Binder),
-    Cons(LambdaTermR, Rc<Sub>),
+    Cons(crate::lambda_term::LambdaTermR<Binder, Lbinder, Prim>, Rc<Sub>),
     Comp(Rc<Sub>, Rc<Sub>),
 }
+
+type LambdaTm = crate::lambda_term::LambdaTerm<Binder, Lbinder, Prim>;
+type LambdaTmR = crate::lambda_term::LambdaTermR<Binder, Lbinder, Prim>;
 
 use Sub::{Incr, Cons, Comp};
 type SubR = Rc<Sub>;
@@ -26,7 +26,7 @@ type SubR = Rc<Sub>;
 pub fn incrr(x : Binder) -> SubR {
     Rc::new(Incr(x))
 }
-pub fn consr(t : LambdaTermR, s : SubR) -> SubR {
+pub fn consr(t : LambdaTmR, s : SubR) -> SubR {
     Rc::new(Cons(t, s))
 }
 pub fn compr(s1 : SubR, s2 : SubR) -> SubR {
@@ -42,18 +42,18 @@ fn nil_sub() -> SubR {
 }
 
 // bind 0 to the given term
-fn single_sub(t : LambdaTermR) -> SubR {
+fn single_sub(t : LambdaTmR) -> SubR {
     consr(t, nil_sub())
 }
 
 // apply substitution to a term
-fn subst(s : SubR, t : LambdaTermR) -> LambdaTermR {
+fn subst(s : SubR, t : LambdaTmR) -> LambdaTmR {
     match &*t {
         App(t1, t2) => {
             appr(subst(s.clone(), t1.clone()), subst(s.clone(), t2.clone()))
         },
-        Abs(t) => {
-            absr(subst(lift(s), t.clone()))
+        Abs(n, t) => {
+            absr((), subst(lift(s), t.clone()))
         },
         Var(i) => {
             apply(s, *i)
@@ -63,7 +63,7 @@ fn subst(s : SubR, t : LambdaTermR) -> LambdaTermR {
 }
 
 // get substitution's value for a particular variable
-fn apply(s : SubR, x : Binder) -> LambdaTermR {
+fn apply(s : SubR, x : Binder) -> LambdaTmR {
     match &*s {
         Sub::Incr(k) => varr(k + x),
         Sub::Cons(t, s) => {
@@ -80,13 +80,13 @@ fn apply(s : SubR, x : Binder) -> LambdaTermR {
     }
 }
 
-fn beta_step_app(body : LambdaTermR, arg : LambdaTermR) -> Result<LambdaTermR, LambdaErr> {
+fn beta_step_app(body : LambdaTmR, arg : LambdaTmR) -> Result<LambdaTmR, LambdaErr> {
     match &*body {
         App(body2, arg2) => {
             let new_body = beta_step_app(body2.clone(), arg2.clone())?;
             Ok(appr(new_body, arg))
         },
-        Abs(body2) => {
+        Abs(n, body2) => {
             Ok(subst(single_sub(arg), body2.clone()))
         },
         Var(_) => Err(Unbound),
@@ -94,18 +94,18 @@ fn beta_step_app(body : LambdaTermR, arg : LambdaTermR) -> Result<LambdaTermR, L
     }
 }
 
-fn beta_step(body : LambdaTermR) -> Result<LambdaTermR, LambdaErr> {
+fn beta_step(body : LambdaTmR) -> Result<LambdaTmR, LambdaErr> {
     match &*body {
         App(body, arg) => {
             beta_step_app(body.clone(), arg.clone())
         },
-        Abs(_) => Err(Stuck),
+        Abs(_,_) => Err(Stuck),
         Var(_) => Err(Unbound),
         Primitive(_) => Err(Stuck),
     }
 }
 
-fn beta_steps(steps : u64, t : LambdaTermR) -> Result<LambdaTermR, LambdaErr> {
+fn beta_steps(steps : u64, t : LambdaTmR) -> Result<LambdaTmR, LambdaErr> {
     let mut t = t;
     for i in [0..steps] {
         t = beta_step(t)?;
@@ -113,7 +113,7 @@ fn beta_steps(steps : u64, t : LambdaTermR) -> Result<LambdaTermR, LambdaErr> {
     Ok(t)
 }
 
-fn beta_eval(t : LambdaTermR) -> Result<LambdaTermR, LambdaErr> {
+fn beta_eval(t : LambdaTmR) -> Result<LambdaTmR, LambdaErr> {
     let mut t = t;
     loop {
         match beta_step(t.clone()) {
@@ -133,15 +133,15 @@ fn beta_eval(t : LambdaTermR) -> Result<LambdaTermR, LambdaErr> {
 
 #[cfg(test)]
 mod tests {
-    use crate::LambdaTerm::{App, Abs, Var, Primitive};
-    use crate::{appr, absr, varr, primr};
-    use crate::{beta_step, beta_steps};
+    use crate::lambda_term::LambdaTerm::{App, Abs, Var, Primitive};
+    use crate::lambda_term::{appr, absr, varr, primr};
+    use crate::de_bruijn::{beta_step, beta_steps};
 
 
     #[test]
     fn subst1() {
         // (\ x y . y x) ()
-        let term1 = absr (absr (appr (varr(0), varr(1))));
+        let term1 = absr ((), absr ((), appr (varr(0), varr(1))));
         let term2 = varr(999);
         let result = beta_step(appr(term1.clone(), term2.clone()));
         println!("Result: {:?}", result);
@@ -150,10 +150,9 @@ mod tests {
     #[test]
     fn subst2() {
         // (\x . x x) (\x . x x)
-        let f = absr(appr(varr(0), varr(0)));
+        let f = absr((), appr(varr(0), varr(0)));
         let omega = appr(f.clone(), f.clone());
         let result = beta_steps(10, omega);
         println!("Omega: {:?}", result);
     }
 }
-*/

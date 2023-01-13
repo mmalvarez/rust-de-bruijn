@@ -7,3 +7,5 @@ edition = "2021"
 
 [dependencies]
 either = "1.8"
+stable-hash = "0.4"
+#siphasher = "0.3"
